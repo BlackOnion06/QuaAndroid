@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -18,6 +20,15 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Claude API key from local.properties (git-ignored), e.g. CLAUDE_API_KEY=sk-ant-...
+        // NOTE: this keeps the key out of version control only. Anything compiled into the APK
+        // can be extracted from it; ship a backend proxy before releasing this to users.
+        val localProperties = Properties().apply {
+            rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use { load(it) }
+        }
+        val claudeApiKey = localProperties.getProperty("CLAUDE_API_KEY", "")
+        buildConfigField("String", "CLAUDE_API_KEY", "\"$claudeApiKey\"")
     }
 
     buildTypes {
@@ -31,9 +42,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        // The Anthropic SDK uses java.time, which needs desugaring below API 26.
+        isCoreLibraryDesugaringEnabled = true
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     androidResources {
         // Keep the MediaPipe model uncompressed so it can be memory-mapped from assets.
@@ -59,6 +73,9 @@ dependencies {
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
+    implementation(libs.anthropic.java)
+    implementation(libs.kotlinx.serialization.json)
+    coreLibraryDesugaring(libs.desugar.jdk.libs)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
