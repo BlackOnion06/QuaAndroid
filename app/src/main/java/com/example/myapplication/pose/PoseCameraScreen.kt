@@ -24,14 +24,21 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,8 +62,12 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.myapplication.exercise.ExerciseMode
 import com.example.myapplication.exercise.FeedbackLevel
+import com.example.myapplication.exercise.PlankMetrics
+import com.example.myapplication.exercise.PlankStatus
 import com.example.myapplication.exercise.SquatMetrics
+import com.example.myapplication.exercise.formatDuration
 import kotlinx.coroutines.awaitCancellation
 import kotlin.math.roundToInt
 
@@ -65,6 +76,11 @@ private const val TAG = "PoseCameraScreen"
 @Composable
 fun PoseCameraScreen(
     modifier: Modifier = Modifier,
+    onClose: (() -> Unit)? = null,
+    /** When set, tracking is fixed to this exercise and the mode selector is hidden. */
+    lockedMode: ExerciseMode? = null,
+    /** Label shown in place of the mode selector, e.g. "Set 2 of 4 · Squat". */
+    title: String? = null,
     viewModel: PoseViewModel = viewModel(),
 ) {
     val context = LocalContext.current
@@ -92,7 +108,13 @@ fun PoseCameraScreen(
     }
 
     if (hasCameraPermission) {
-        PoseCameraContent(viewModel = viewModel, modifier = modifier)
+        PoseCameraContent(
+            viewModel = viewModel,
+            onClose = onClose,
+            lockedMode = lockedMode,
+            title = title,
+            modifier = modifier,
+        )
     } else {
         CameraPermissionRationale(
             onRequestPermission = { permissionLauncher.launch(Manifest.permission.CAMERA) },
@@ -104,6 +126,7 @@ fun PoseCameraScreen(
                     )
                 )
             },
+            onClose = onClose,
             modifier = modifier,
         )
     }
@@ -112,12 +135,22 @@ fun PoseCameraScreen(
 @Composable
 private fun PoseCameraContent(
     viewModel: PoseViewModel,
+    onClose: (() -> Unit)?,
+    lockedMode: ExerciseMode?,
+    title: String?,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    LaunchedEffect(lockedMode) {
+        lockedMode?.let(viewModel::selectExercise)
+    }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val exerciseMode by viewModel.exerciseMode.collectAsStateWithLifecycle()
+    // Only the active analyzer emits, so collecting both doesn't cause extra recompositions.
     val squatMetrics by viewModel.squatMetrics.collectAsStateWithLifecycle()
+    val plankMetrics by viewModel.plankMetrics.collectAsStateWithLifecycle()
 
     val previewView = remember {
         PreviewView(context).apply {
@@ -181,36 +214,54 @@ private fun PoseCameraContent(
 
         Column(
             modifier = Modifier
-                .align(Alignment.TopStart)
+                .align(Alignment.TopCenter)
+                .fillMaxWidth()
                 .safeDrawingPadding()
-                .padding(12.dp)
-                .background(Color.Black.copy(alpha = 0.5f), MaterialTheme.shapes.small)
-                .padding(horizontal = 8.dp, vertical = 4.dp),
+                .padding(12.dp),
         ) {
-            Text(
-                text = "Delegate: ${uiState.delegate?.name ?: "loading…"}",
-                color = Color.White,
-                style = MaterialTheme.typography.labelMedium,
-            )
-            uiState.pose?.let {
-                Text(
-                    text = "Inference: ${it.inferenceTimeMs} ms",
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelMedium,
-                )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (onClose != null) {
+                    FilledTonalButton(onClick = onClose) { Text("End") }
+                }
+                if (lockedMode == null) {
+                    ExerciseModeSelector(
+                        selected = exerciseMode,
+                        onSelect = viewModel::selectExercise,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    Text(
+                        text = title ?: lockedMode.displayName,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(Color.Black.copy(alpha = 0.6f), MaterialTheme.shapes.medium)
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                    )
+                }
             }
-            uiState.errorMessage?.let {
-                Text(text = it, color = Color(0xFFFF8A80), style = MaterialTheme.typography.labelMedium)
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Top,
+            ) {
+                DiagnosticsPanel(uiState = uiState)
+                when (exerciseMode) {
+                    ExerciseMode.SQUAT -> SquatStatsPanel(metrics = squatMetrics)
+                    ExerciseMode.PLANK -> PlankStatsPanel(metrics = plankMetrics)
+                }
             }
         }
 
-        SquatStatsPanel(
-            metrics = squatMetrics,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .safeDrawingPadding()
-                .padding(12.dp),
-        )
+        if (exerciseMode == ExerciseMode.PLANK) {
+            PlankCenterOverlay(metrics = plankMetrics, modifier = Modifier.align(Alignment.Center))
+        }
 
         Column(
             modifier = Modifier
@@ -219,13 +270,26 @@ private fun PoseCameraContent(
                 .padding(horizontal = 16.dp, vertical = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            SquatFeedbackBanner(metrics = squatMetrics)
+            val resetLabel = when (exerciseMode) {
+                ExerciseMode.SQUAT -> {
+                    FeedbackBanner(text = squatMetrics.feedback, level = squatMetrics.feedbackLevel)
+                    "Reset"
+                }
+                ExerciseMode.PLANK -> {
+                    FeedbackBanner(
+                        text = plankMetrics.feedback,
+                        detail = plankMetrics.detail,
+                        level = plankMetrics.feedbackLevel,
+                    )
+                    if (plankMetrics.status == PlankStatus.FINISHED) "Restart" else "Reset"
+                }
+            }
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(
-                    onClick = viewModel::resetSquats,
+                    onClick = viewModel::resetExercise,
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                ) { Text("Reset") }
+                ) { Text(resetLabel) }
                 Button(onClick = viewModel::switchCamera) {
                     Text(
                         if (uiState.lensFacing == CameraSelector.LENS_FACING_FRONT) "Use rear camera"
@@ -234,6 +298,118 @@ private fun PoseCameraContent(
                 }
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ExerciseModeSelector(
+    selected: ExerciseMode,
+    onSelect: (ExerciseMode) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val modes = ExerciseMode.entries
+    SingleChoiceSegmentedButtonRow(modifier = modifier) {
+        modes.forEachIndexed { index, mode ->
+            SegmentedButton(
+                selected = mode == selected,
+                onClick = { onSelect(mode) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = modes.size),
+                colors = SegmentedButtonDefaults.colors(
+                    inactiveContainerColor = Color.Black.copy(alpha = 0.6f),
+                    inactiveContentColor = Color.White,
+                ),
+            ) {
+                Text(mode.label)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticsPanel(uiState: PoseUiState, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.5f), MaterialTheme.shapes.small)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        Text(
+            text = "Delegate: ${uiState.delegate?.name ?: "loading…"}",
+            color = Color.White,
+            style = MaterialTheme.typography.labelMedium,
+        )
+        uiState.pose?.let {
+            Text(
+                text = "Inference: ${it.inferenceTimeMs} ms",
+                color = Color.White,
+                style = MaterialTheme.typography.labelMedium,
+            )
+        }
+        uiState.errorMessage?.let {
+            Text(text = it, color = Color(0xFFFF8A80), style = MaterialTheme.typography.labelMedium)
+        }
+    }
+}
+
+@Composable
+private fun PlankStatsPanel(metrics: PlankMetrics, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.6f), MaterialTheme.shapes.medium)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .semantics(mergeDescendants = true) {},
+        horizontalAlignment = Alignment.End,
+    ) {
+        Text("HOLD", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelMedium)
+        Text(
+            text = formatDuration(metrics.holdTimeMs),
+            color = Color.White,
+            style = MaterialTheme.typography.displayMedium,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = "Body: ${metrics.bodyAngle?.let { "${it.roundToInt()}°" } ?: "--"}",
+            color = Color.White,
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Text(
+            text = buildString {
+                append(metrics.status.name.replace('_', ' '))
+                metrics.trackedSide?.let { append(" · ${it.name.lowercase()} side") }
+            },
+            color = Color.White.copy(alpha = 0.7f),
+            style = MaterialTheme.typography.labelSmall,
+        )
+    }
+}
+
+/** Large centred countdown during the grace period, and the final time once the session ends. */
+@Composable
+private fun PlankCenterOverlay(metrics: PlankMetrics, modifier: Modifier = Modifier) {
+    when (metrics.status) {
+        PlankStatus.GRACE_PERIOD -> Text(
+            text = metrics.graceSecondsRemaining?.toString().orEmpty(),
+            color = Color(0xFFFFAB40),
+            style = MaterialTheme.typography.displayLarge,
+            fontWeight = FontWeight.Black,
+            modifier = modifier,
+        )
+        PlankStatus.FINISHED -> Column(
+            modifier = modifier
+                .background(Color.Black.copy(alpha = 0.75f), MaterialTheme.shapes.large)
+                .padding(horizontal = 32.dp, vertical = 20.dp)
+                .semantics(mergeDescendants = true) {},
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("FINAL TIME", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.labelLarge)
+            Text(
+                text = formatDuration(metrics.holdTimeMs),
+                color = Color.White,
+                style = MaterialTheme.typography.displayLarge,
+                fontWeight = FontWeight.Bold,
+            )
+        }
+        else -> Unit
     }
 }
 
@@ -272,29 +448,47 @@ private fun SquatStatsPanel(metrics: SquatMetrics, modifier: Modifier = Modifier
 }
 
 @Composable
-private fun SquatFeedbackBanner(metrics: SquatMetrics, modifier: Modifier = Modifier) {
-    val background = when (metrics.feedbackLevel) {
+private fun FeedbackBanner(
+    text: String,
+    level: FeedbackLevel,
+    modifier: Modifier = Modifier,
+    detail: String? = null,
+) {
+    val background = when (level) {
         FeedbackLevel.GOOD -> Color(0xFF2E7D32)
         FeedbackLevel.WARNING -> Color(0xFFE65100)
         FeedbackLevel.INFO -> Color.Black.copy(alpha = 0.6f)
     }
-    Text(
-        text = metrics.feedback,
-        color = Color.White,
-        style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.SemiBold,
-        textAlign = TextAlign.Center,
+    Column(
         modifier = modifier
             .background(background, MaterialTheme.shapes.medium)
             .padding(horizontal = 20.dp, vertical = 10.dp)
-            .semantics { liveRegion = LiveRegionMode.Polite },
-    )
+            .semantics(mergeDescendants = true) { liveRegion = LiveRegionMode.Polite },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = text,
+            color = Color.White,
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center,
+        )
+        detail?.let {
+            Text(
+                text = it,
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
 }
 
 @Composable
 private fun CameraPermissionRationale(
     onRequestPermission: () -> Unit,
     onOpenSettings: () -> Unit,
+    onClose: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -314,6 +508,10 @@ private fun CameraPermissionRationale(
         Button(onClick = onRequestPermission) { Text("Grant camera permission") }
         Spacer(Modifier.height(8.dp))
         OutlinedButton(onClick = onOpenSettings) { Text("Open app settings") }
+        if (onClose != null) {
+            Spacer(Modifier.height(8.dp))
+            TextButton(onClick = onClose) { Text("Back") }
+        }
     }
 }
 

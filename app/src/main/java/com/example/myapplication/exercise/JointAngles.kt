@@ -42,5 +42,24 @@ object JointAngles {
         return degrees
     }
 
+    /**
+     * Signed 2D straightness angle at [vertex] for a segment chain [start]→[vertex]→[end] in image
+     * coordinates (y grows downward), in degrees [0, 360).
+     *
+     * 180 means the three points are collinear. Below 180 the vertex sits *below* the
+     * start→end line (e.g. sagging hips); above 180 it sits *above* the line (e.g. piked hips).
+     * The result is independent of which direction the body faces.
+     */
+    fun straightnessAngle2D(start: Point3, vertex: Point3, end: Point3): Float {
+        val interior = angle2D(start, vertex, end)
+        val dx = end.x - start.x
+        val dy = end.y - start.y
+        // Cross product sign tells which side of start→end the vertex is on; normalising by the
+        // line's horizontal direction makes "negative" always mean "above" in screen space.
+        val cross = dx * (vertex.y - start.y) - dy * (vertex.x - start.x)
+        val directedCross = if (dx >= 0f) cross else -cross
+        return if (directedCross < 0f) 360f - interior else interior
+    }
+
     private const val EPSILON = 1e-6f
 }

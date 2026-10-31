@@ -15,8 +15,6 @@ enum class FormIssue(val label: String) {
     KNEES_CAVING("Knees Caving In"),
 }
 
-enum class FeedbackLevel { INFO, GOOD, WARNING }
-
 data class SquatMetrics(
     val repCount: Int = 0,
     val goodFormReps: Int = 0,
@@ -60,16 +58,6 @@ data class SquatConfig(
 )
 
 /**
- * One pose sample. [image] is in pixel units (normalized coords × frame size) so x/y share a scale;
- * [world] is MediaPipe's hip-centred metric 3D landmarks, if available.
- */
-data class PoseFrame(
-    val image: List<Point3>,
-    val world: List<Point3>?,
-    val visibility: List<Float>,
-)
-
-/**
  * Counts bodyweight squats and checks form from pose landmarks.
  *
  * Rep state machine: WAITING_FOR_START → UP → DESCENDING → DOWN → ASCENDING → UP.
@@ -79,7 +67,7 @@ data class PoseFrame(
  *
  * Thread-safe: [analyze] is called from the MediaPipe result thread, [reset] from the UI.
  */
-class SquatAnalyzer(private val config: SquatConfig = SquatConfig()) {
+class SquatAnalyzer(private val config: SquatConfig = SquatConfig()) : ExerciseAnalyzer {
 
     private val _metrics = MutableStateFlow(SquatMetrics())
     val metrics: StateFlow<SquatMetrics> = _metrics.asStateFlow()
@@ -98,7 +86,7 @@ class SquatAnalyzer(private val config: SquatConfig = SquatConfig()) {
     private var lastRepIssues: Set<FormIssue> = emptySet()
     private var lastRepMessage: Pair<String, FeedbackLevel>? = null
 
-    fun process(bundle: PoseResultBundle) {
+    override fun process(bundle: PoseResultBundle) {
         analyze(bundle.toPoseFrame())
     }
 
@@ -162,7 +150,7 @@ class SquatAnalyzer(private val config: SquatConfig = SquatConfig()) {
     }
 
     @Synchronized
-    fun reset() {
+    override fun reset() {
         phase = SquatPhase.WAITING_FOR_START
         repCount = 0
         goodFormReps = 0
@@ -279,23 +267,11 @@ class SquatAnalyzer(private val config: SquatConfig = SquatConfig()) {
     private fun Point3.distance2D(other: Point3) = hypot(x - other.x, y - other.y)
 
     companion object {
-        // MediaPipe Pose landmark indices.
-        const val LEFT_HIP = 23
-        const val RIGHT_HIP = 24
-        const val LEFT_KNEE = 25
-        const val RIGHT_KNEE = 26
-        const val LEFT_ANKLE = 27
-        const val RIGHT_ANKLE = 28
+        const val LEFT_HIP = PoseLandmarks.LEFT_HIP
+        const val RIGHT_HIP = PoseLandmarks.RIGHT_HIP
+        const val LEFT_KNEE = PoseLandmarks.LEFT_KNEE
+        const val RIGHT_KNEE = PoseLandmarks.RIGHT_KNEE
+        const val LEFT_ANKLE = PoseLandmarks.LEFT_ANKLE
+        const val RIGHT_ANKLE = PoseLandmarks.RIGHT_ANKLE
     }
-}
-
-/** Converts the first detected pose into a [PoseFrame], or null if no person is detected. */
-fun PoseResultBundle.toPoseFrame(): PoseFrame? {
-    val landmarks = result.landmarks().firstOrNull() ?: return null
-    val world = result.worldLandmarks().firstOrNull()
-    return PoseFrame(
-        image = landmarks.map { Point3(it.x() * imageWidth, it.y() * imageHeight, it.z() * imageWidth) },
-        world = world?.map { Point3(it.x(), it.y(), it.z()) },
-        visibility = landmarks.map { it.visibility().orElse(1f) },
-    )
 }

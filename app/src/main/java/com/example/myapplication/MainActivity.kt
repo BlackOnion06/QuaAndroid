@@ -6,7 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
-import com.example.myapplication.pose.PoseCameraScreen
+import com.example.myapplication.navigation.AppNavigation
 import com.example.myapplication.ui.theme.MyApplicationTheme
 
 class MainActivity : ComponentActivity() {
@@ -15,7 +15,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
-                PoseCameraScreen(modifier = Modifier.fillMaxSize())
+                AppNavigation(modifier = Modifier.fillMaxSize())
             }
         }
     }
