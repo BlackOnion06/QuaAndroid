@@ -1,8 +1,8 @@
-# Qua
+# Quwa
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-C6FF00.svg)](LICENSE)
 
-A free, open-source AI personal trainer for Android. Qua uses your phone's camera to track your
+A free, open-source AI personal trainer for Android. Quwa uses your phone's camera to track your
 body pose in real time and coaches your exercise form, entirely on-device. No subscription, no
 extra hardware, and your video never leaves your phone.
 
@@ -27,7 +27,7 @@ Kotlin · Jetpack Compose · CameraX · MediaPipe Tasks Vision · minSdk 24 (And
 
 ## License
 
-Qua is released under the [MIT License](LICENSE): you are free to use, copy, modify and
+Quwa is released under the [MIT License](LICENSE): you are free to use, copy, modify and
 distribute it, including commercially, as long as the license notice is kept.
 
 Third-party components (including the bundled MediaPipe pose model, Apache License 2.0) are listed
